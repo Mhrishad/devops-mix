@@ -1,0 +1,20 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mhrishad-app-deployment
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mhrishad-app
+  template:
+    metadata:
+      labels:
+        app: mhrishad-app
+    spec:
+      containers:
+        - name: mhrishad-app
+          image: mhrishad-app:latest
+          imagePullPolicy: IfNotPresent   # This ensures the local image is used if available
+          ports:
+            - containerPort: 80
