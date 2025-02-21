@@ -1,0 +1,91 @@
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_HUB_CREDENTIALS = credentials('docker-hub-credentials') 
+        DOCKER_IMAGE_NAME = 'mhrishad/mhrishad-app'
+        COMPOSE_FILE_PATH = '/var/www/app/docker-compose.yaml' 
+    }
+
+    triggers {
+        pollSCM('* * * * *') 
+    }
+
+    stages {
+        stage('Checkout Code') {
+            steps {
+                checkout scm 
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                script {
+                    // Generate the image tag
+                    def BUILD_NUMBER = env.BUILD_NUMBER
+                    def DATE = new Date().format('dd-MM-HH-mm')
+                    def IMAGE_TAG = "${BUILD_NUMBER}-${DATE}"
+                    
+                    // Build the Docker image
+                    sh "docker build -t ${DOCKER_IMAGE_NAME}:${IMAGE_TAG} ."
+                }
+            }
+        }
+
+        stage('Push Docker Image') {
+            steps {
+                script {
+                    // Log in to Docker Hub
+                    sh "echo ${DOCKER_HUB_CREDENTIALS_PSW} | docker login -u ${DOCKER_HUB_CREDENTIALS_USR} --password-stdin"
+                    
+                    // Push the Docker image
+                    sh "docker push ${DOCKER_IMAGE_NAME}:${IMAGE_TAG}"
+                    
+                    // Log out of Docker Hub
+                    sh "docker logout"
+                }
+            }
+        }
+
+        stage('Update Docker Compose and Restart') {
+            steps {
+                script {
+                    // Update the docker-compose.yaml file with the new image tag
+                    sh "sed -i 's|image: ${DOCKER_IMAGE_NAME}:.*|image: ${DOCKER_IMAGE_NAME}:${IMAGE_TAG}|g' ${COMPOSE_FILE_PATH}"
+                    
+                    // Rerun docker-compose to pick up the new image
+                    sh "docker-compose -f ${COMPOSE_FILE_PATH} up -d"
+                }
+            }
+        }
+
+        stage('Clean Workspace') {
+            steps {
+                cleanWs() // Clean the Jenkins workspace
+            }
+        }
+
+        stage('Send Google Chat Notification') {
+            steps {
+                script {
+                    // Send a Google Chat notification
+                    def NOTIFICATION_MESSAGE = "Application has been updated, ImageName: ${DOCKER_IMAGE_NAME}:${IMAGE_TAG}"
+                    sh """
+                        curl -X POST -H 'Content-Type: application/json' \
+                        -d '{"text": "${NOTIFICATION_MESSAGE}"}' \
+                        YOUR_GOOGLE_CHAT_WEBHOOK_URL
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Pipeline completed successfully!'
+        }
+        failure {
+            echo 'Pipeline failed!'
+        }
+    }
+}
